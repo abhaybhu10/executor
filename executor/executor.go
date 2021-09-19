@@ -11,10 +11,12 @@ const (
 	capacity = 2000
 )
 
+type Callable interface {
+	Call(context.Context) (interface{}, error)
+}
 type Executor interface {
-	submit(job job) (Status, error)
-	start() error
-	stop() error
+	Submit(task Callable) (Future, error)
+	Shutdown()
 }
 
 type SimpleExecutor struct {
@@ -28,8 +30,8 @@ type SimpleExecutor struct {
 	ctx         context.Context
 }
 
-func NewSimpleExecutor(concurrency int) *SimpleExecutor {
-	return &SimpleExecutor{
+func NewSimpleExecutor(concurrency int) Executor {
+	ex := &SimpleExecutor{
 		concurrency: concurrency,
 		jobs:        make(chan job, capacity),
 		running:     make(chan job, concurrency),
@@ -38,9 +40,11 @@ func NewSimpleExecutor(concurrency int) *SimpleExecutor {
 		wg:          &sync.WaitGroup{},
 		ctx:         context.Background(),
 	}
+	ex.start()
+	return ex
 }
 
-func (SE *SimpleExecutor) Submit(task task) (Future, error) {
+func (SE *SimpleExecutor) Submit(task Callable) (Future, error) {
 
 	if SE.status != Status("RUNNING") {
 		return nil, errors.New("Executor is not running")
@@ -63,7 +67,7 @@ func (SE *SimpleExecutor) Submit(task task) (Future, error) {
 	return job.future, nil
 }
 
-func (SE *SimpleExecutor) Start() {
+func (SE *SimpleExecutor) start() {
 	SE.status = Status("RUNNING")
 	go func() {
 		for {
@@ -97,7 +101,7 @@ func (SE *SimpleExecutor) Shutdown() {
 
 func (SE *SimpleExecutor) completeTask(job job) {
 
-	result, err := job.task(job.ctx)
+	result, err := job.task.Call(job.ctx)
 	if err != nil {
 		job.err = err
 		job.status = Status("FAILED")
@@ -114,7 +118,7 @@ type task func(context.Context) (interface{}, error)
 type job struct {
 	id     int
 	status Status
-	task   task
+	task   Callable
 	err    error
 	future Future
 	ctx    context.Context

@@ -9,31 +9,34 @@ import (
 	"github.com/abhaybhu10/executor/executor"
 )
 
-type TestData struct {
+type TestTask struct {
 	msg int
+}
+
+func (t *TestTask) Call(context context.Context) (interface{}, error) {
+	fmt.Printf("task %d started\n", t.msg)
+	select {
+	case <-time.After(5 * time.Second):
+		fmt.Printf("Task %d Finished \n", t.msg)
+		return TestData{msg: t.msg}, nil
+	case <-context.Done():
+		fmt.Printf("Job %d cancelled\n", t.msg)
+		return nil, errors.New("Job cancelled")
+	}
 }
 
 func main() {
 	ex := executor.NewSimpleExecutor(20)
-	ex.Start()
 	i := 0
-	futures := make([]executor.Future, 0)
+	futures := make ([]executor.Future, 0)
 
+	//submit 100 task
 	for i < 100 {
 		i++
-		future, _ := ex.Submit(
-			func(context context.Context) (interface{}, error) {
-				fmt.Printf("task %d started\n", i)
-				select {
-				case <-time.After(5 * time.Second):
-					fmt.Printf("Task %d Finished \n", i)
-					return TestData{msg: i}, nil
-				case <-context.Done():
-					fmt.Printf("Job %d cancelled\n", i)
-					return nil, errors.New("Job cancelled")
-				}
-			},
-		)
+		td := &TestTask{
+			msg: i,
+		}
+		future, _ := ex.Submit(td)
 		futures = append(futures, future)
 	}
 
@@ -53,4 +56,8 @@ func main() {
 
 	time.Sleep(1000 * time.Second)
 	ex.Shutdown()
+}
+
+type TestData struct {
+	msg int
 }
